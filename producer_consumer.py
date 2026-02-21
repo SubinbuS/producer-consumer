@@ -1,184 +1,164 @@
-import threading
-import queue
+import multiprocessing as mp
+import numpy as np
 import time
 import os
-from dataclasses import dataclass
-from typing import List
 from PIL import Image
 
 
 # -----------------------------
-# Модель задачи
+# Поиск файла с поддержкой разных расширений
 # -----------------------------
-@dataclass
-class Task:
-    y_start: int
-    y_end: int
+def find_image_file(name: str):
+    possible_extensions = [".jpg", ".jpeg", ".png"]
 
+    # если пользователь уже ввёл расширение
+    if os.path.exists(name):
+        return name
 
-# -----------------------------
-# Алгоритм инверсии (Вариант 1)
-# -----------------------------
-def invert_pillow(image: Image.Image, y_start: int, y_end: int):
-    pixels = image.load()
-    width = image.width
+    # пробуем разные расширения
+    for ext in possible_extensions:
+        candidate = name + ext
+        if os.path.exists(candidate):
+            return candidate
 
-    for y in range(y_start, y_end):
-        for x in range(width):
-            r, g, b = pixels[x, y]
-            pixels[x, y] = (255 - r, 255 - g, 255 - b)
+    return None
 
 
 # -----------------------------
-# Producer
+# Инверсия одного изображения
 # -----------------------------
-class Producer(threading.Thread):
-    def __init__(self, task_queue: queue.Queue,
-                 image_height: int,
-                 block_size: int):
-        super().__init__()
-        self.task_queue = task_queue
-        self.image_height = image_height
-        self.block_size = block_size
-
-    def run(self):
-        for y in range(0, self.image_height, self.block_size):
-            y_end = min(y + self.block_size, self.image_height)
-            task = Task(y_start=y, y_end=y_end)
-            self.task_queue.put(task)
-
-
-# -----------------------------
-# Consumer
-# -----------------------------
-class Consumer(threading.Thread):
-    def __init__(self, task_queue: queue.Queue,
-                 image: Image.Image):
-        super().__init__()
-        self.task_queue = task_queue
-        self.image = image
-
-    def run(self):
-        while True:
-            task = self.task_queue.get()
-
-            if task is None:
-                self.task_queue.task_done()
-                break
-
-            invert_pillow(self.image, task.y_start, task.y_end)
-            self.task_queue.task_done()
-
-
-# -----------------------------
-# Task Manager
-# -----------------------------
-class TaskManager:
-    def __init__(self, image: Image.Image,
-                 num_workers: int,
-                 block_size: int,
-                 queue_size: int = 100):
-
-        if num_workers <= 0:
-            raise ValueError("Number of workers must be >= 1")
-
-        self.image = image
-        self.task_queue = queue.Queue(maxsize=queue_size)
-        self.num_workers = num_workers
-        self.block_size = block_size
-
-        self.producer = Producer(
-            self.task_queue,
-            image_height=image.height,
-            block_size=block_size
-        )
-
-        self.consumers: List[Consumer] = [
-            Consumer(self.task_queue, image)
-            for _ in range(num_workers)
-        ]
-
-    def start(self):
-        for consumer in self.consumers:
-            consumer.start()
-
-        self.producer.start()
-
-    def wait_for_completion(self):
-        self.producer.join()
-        self.task_queue.join()
-
-        # Poison pill
-        for _ in self.consumers:
-            self.task_queue.put(None)
-
-        self.task_queue.join()
-
-        for consumer in self.consumers:
-            consumer.join()
-
-
-# -----------------------------
-# Универсальная функция для тестов
-# -----------------------------
-def process_image(input_path: str,
-                  output_path: str,
-                  num_workers: int,
-                  block_size: int = 32) -> float:
+def invert_image_file(input_path: str, output_path: str) -> float:
     """
-    Обрабатывает изображение и возвращает время обработки.
-    Используется как для main, так и для тестов.
+    Инвертирует изображение через NumPy.
+    Возвращает время обработки.
     """
 
-    image = Image.open(input_path).convert("RGB")
+    start = time.perf_counter()
 
-    manager = TaskManager(
-        image=image,
-        num_workers=num_workers,
-        block_size=block_size,
-        queue_size=200
-    )
+    img = Image.open(input_path)
 
-    start_time = time.time()
+    # сохраняем альфу если есть
+    if img.mode == "RGBA":
+        arr = np.array(img, dtype=np.uint8)
+        rgb = arr[:, :, :3]
+        alpha = arr[:, :, 3:]
+        rgb = 255 - rgb
+        result = np.concatenate((rgb, alpha), axis=2)
+    else:
+        img = img.convert("RGB")
+        arr = np.array(img, dtype=np.uint8)
+        result = 255 - arr
 
-    manager.start()
-    manager.wait_for_completion()
+    Image.fromarray(result).save(output_path)
 
-    end_time = time.time()
+    end = time.perf_counter()
+    return end - start
 
-    image.save(output_path)
 
-    return end_time - start_time
+# -----------------------------
+# Consumer (процесс)
+# -----------------------------
+def consumer(file_queue: mp.Queue, result_queue: mp.Queue):
+    while True:
+        input_path = file_queue.get()
+
+        if input_path is None:
+            break
+
+        filename = os.path.basename(input_path)
+        name, ext = os.path.splitext(filename)
+        output_path = f"output_{name}{ext}"
+
+        try:
+            duration = invert_image_file(input_path, output_path)
+            result_queue.put((input_path, output_path, duration, None))
+        except Exception as e:
+            result_queue.put((input_path, None, None, str(e)))
+
+
+# -----------------------------
+# Producer–Consumer запуск
+# -----------------------------
+def run_parallel_inversion(image_names: list[str], num_workers: int):
+
+    ctx = mp.get_context("spawn")  # важно для Windows
+    file_queue = ctx.Queue()
+    result_queue = ctx.Queue()
+
+    # Запуск Consumers
+    workers = []
+    for _ in range(num_workers):
+        p = ctx.Process(target=consumer, args=(file_queue, result_queue))
+        p.start()
+        workers.append(p)
+
+    valid_files = []
+
+    # Producer — кладём файлы в очередь
+    for name in image_names:
+        path = find_image_file(name)
+        if path:
+            file_queue.put(path)
+            valid_files.append(path)
+        else:
+            print(f"[ОШИБКА] Файл {name} не найден")
+
+    # Сигнал завершения
+    for _ in range(num_workers):
+        file_queue.put(None)
+
+    # Сбор результатов
+    results = []
+    for _ in range(len(valid_files)):
+        results.append(result_queue.get())
+
+    # Ждём завершения процессов
+    for p in workers:
+        p.join()
+
+    # Вывод результатов
+    print("\n=== Результаты ===")
+    for in_path, out_path, duration, err in results:
+        if err:
+            print(f"[FAIL] {in_path}: {err}")
+        else:
+            print(f"[OK] {in_path} → {out_path} | {duration:.3f} сек")
+
+    print("=== Готово ===")
 
 
 # -----------------------------
 # Main
 # -----------------------------
 def main():
-    filename = input("Введите имя файла (без расширения): ").strip()
-    input_path = filename + ".jpg"
-
-    if not os.path.exists(input_path):
-        print("Файл не найден.")
-        return
+    mp.freeze_support()
 
     try:
-        num_workers = int(input("Введите количество потоков: "))
+        num_workers = int(input("Введите количество процессов: ").strip())
+        if num_workers <= 0:
+            raise ValueError
     except ValueError:
-        print("Некорректное число потоков.")
+        print("Некорректное число процессов.")
         return
 
-    output_path = f"{filename}_inverted.jpg"
+    files_input = input(
+        "Введите имена файлов через пробел (с расширением или без): "
+    ).strip().split()
 
-    duration = process_image(
-        input_path=input_path,
-        output_path=output_path,
-        num_workers=num_workers
-    )
+    if not files_input:
+        print("Файлы не указаны.")
+        return
 
-    print(f"Использовано потоков: {num_workers}")
-    print(f"Время обработки: {duration:.3f} секунд")
-    print("Готово!")
+    print("\n=== Начинаем параллельную обработку ===")
+
+    overall_start = time.perf_counter()
+
+    run_parallel_inversion(files_input, num_workers)
+
+    overall_end = time.perf_counter()
+
+    print(f"\nОбщее время выполнения: {overall_end - overall_start:.3f} сек")
+
 
 if __name__ == "__main__":
     main()

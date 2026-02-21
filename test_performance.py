@@ -1,57 +1,95 @@
-import time
 import os
-import threading
-from producer_consumer import process_image
+import shutil
+import multiprocessing as mp
+import time
+from producer_consumer import run_parallel_inversion
+
 
 # ===========================
-# Настройки тестов
+# Конфигурация
 # ===========================
 
-TEST_CONFIG = {
-    "input1.jpg": [1, 4, 8],
-    "input2.jpg": [2, 6],
-    "input3.jpg": [1, 2, 4, 8]
-}
-
-TIMEOUT_SECONDS = 60
+MAX_FILES = 10
+MAX_PROCESSES = 8
+TIMEOUT_SECONDS = 300
 
 
-def run_test(image_path, num_threads):
-    print(f"\n--- {image_path} | Потоки: {num_threads} ---")
+def find_existing_inputs():
+    """
+    Ищем input1.jpg ... input10.jpg
+    """
+    files = []
+    for i in range(1, MAX_FILES + 1):
+        filename = f"input{i}.jpg"
+        if os.path.exists(filename):
+            files.append(f"input{i}")
+    return files
 
-    if not os.path.exists(image_path):
-        print(f"[ОШИБКА] Файл {image_path} не найден")
+
+def run_single_test(test_number, num_workers, image_list):
+    """
+    Запускает один тест:
+    - создаёт папку testN
+    - запускает обработку
+    - переносит output_* в testN
+    """
+
+    test_folder = f"test{test_number}"
+
+    if os.path.exists(test_folder):
+        shutil.rmtree(test_folder)
+
+    os.makedirs(test_folder)
+
+    print(f"\n=== Тест {test_number} | Процессов: {num_workers} ===")
+
+    start_time = time.perf_counter()
+
+    process = mp.Process(
+        target=run_parallel_inversion,
+        args=(image_list, num_workers)
+    )
+
+    process.start()
+    process.join(timeout=TIMEOUT_SECONDS)
+
+    if process.is_alive():
+        print("[ПРОБЛЕМА] Возможное зависание!")
+        process.terminate()
         return
 
-    result = {}
+    end_time = time.perf_counter()
+    total_time = end_time - start_time
 
-    def target():
-        duration = process_image(
-            input_path=image_path,
-            output_path=f"test_output_{num_threads}.jpg",
-            num_workers=num_threads
-        )
-        result["duration"] = duration
+    # переносим output файлы
+    for file in os.listdir():
+        if file.startswith("output_"):
+            shutil.move(file, os.path.join(test_folder, file))
 
-    test_thread = threading.Thread(target=target)
-    test_thread.start()
-    test_thread.join(timeout=TIMEOUT_SECONDS)
-
-    if test_thread.is_alive():
-        print("[ПРОБЛЕМА] Возможное зависание потока!")
-        return
-
-    print(f"[OK] Время обработки: {result['duration']:.3f} секунд")
+    print(f"Тест {test_number} завершён.")
+    print(f"Общее время: {total_time:.3f} сек")
+    print(f"Результаты сохранены в папку {test_folder}")
 
 
 def main():
-    print("=== Тестирование производительности ===")
+    mp.freeze_support()
 
-    for image, thread_list in TEST_CONFIG.items():
-        for threads in thread_list:
-            run_test(image, threads)
+    print("=== Автоматическое тестирование ===")
 
-    print("\n=== Тестирование завершено ===")
+    images = find_existing_inputs()
+
+    if not images:
+        print("Файлы input1.jpg - input10.jpg не найдены.")
+        return
+
+    test_counter = 1
+
+    # Тестируем от 1 до 8 процессов
+    for workers in range(1, MAX_PROCESSES + 1):
+        run_single_test(test_counter, workers, images)
+        test_counter += 1
+
+    print("\n=== Все тесты завершены ===")
 
 
 if __name__ == "__main__":
