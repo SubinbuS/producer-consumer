@@ -25,7 +25,7 @@ def find_all_inputs():
                 break
 
         if not found:
-            print(f"Предупреждение: файл input{i} не найден (ни .jpg, ни .png)")
+            print(f"Warning: file input{i} not found(neither .jpg, neither .png).")
     return files
 
 
@@ -82,7 +82,7 @@ def check_files_exist(image_list):
             missing.append(img)
 
     if missing:
-        print(f"ВНИМАНИЕ: Следующие файлы не найдены: {missing}")
+        print(f"WARNING:Next files not founded: {missing}")
         return False
     return True
 
@@ -98,15 +98,15 @@ def run_single_test(test_number, num_workers, all_images):
     image_list = get_files_for_test(test_number, all_images)
 
     if not check_files_exist(image_list):
-        print(f"ПРОПУСК теста {test_number}: отсутствуют файлы")
+        print(f"SKIP text {test_number}: files are missing")
         return
 
-    test_type = "СЛУЧАЙНЫЙ" if test_number <= 4 else "УВЕЛИЧЕНИЕ"
+    test_type = "RANDOMLY" if test_number <= 4 else "INCREASING"
 
     print(f"\n{'=' * 60}")
-    print(f"Тест {test_number} | Процессов: {num_workers} | Тип: {test_type}")
+    print(f"Test {test_number} | Processes: {num_workers} | Type: {test_type}")
     print(f"{'=' * 60}")
-    print(f"Обрабатывается файлов: {len(image_list)}")
+    print(f"Files are being processed: {len(image_list)}")
 
     files_with_ext = []
     for img in image_list:
@@ -115,8 +115,8 @@ def run_single_test(test_number, num_workers, all_images):
                 files_with_ext.append(f"{img}{ext}")
                 break
 
-    print(f"Файлы: {files_with_ext}")
-    print(f"Количество процессов: {num_workers}")
+    print(f"Files: {files_with_ext}")
+    print(f"Count of processes: {num_workers}")
 
     start_time = time.perf_counter()
 
@@ -129,7 +129,7 @@ def run_single_test(test_number, num_workers, all_images):
     process.join(timeout=TIMEOUT_SECONDS)
 
     if process.is_alive():
-        print(f"[ПРОБЛЕМА] Возможное зависание! Процесс не завершился за {TIMEOUT_SECONDS} сек.")
+        print(f"[PROBLEM] Hanging is possible! Process not complete till {TIMEOUT_SECONDS} s.")
         process.terminate()
         process.join()
         return
@@ -144,35 +144,35 @@ def run_single_test(test_number, num_workers, all_images):
                 shutil.move(file, os.path.join(test_folder, file))
                 moved_files += 1
 
-    print(f"\nРезультаты теста {test_number}:")
-    print(f"  - Время выполнения: {total_time:.3f} сек")
-    print(f"  - Обработано файлов: {len(image_list)}")
-    print(f"  - Получено результатов: {moved_files}")
-    print(f"  - Результаты сохранены в папку: {test_folder}")
+    print(f"\nResults of texts: {test_number}:")
+    print(f"  - Lead time: {total_time:.3f} сек")
+    print(f"  - Processed files: {len(image_list)}")
+    print(f"  - Results received: {moved_files}")
+    print(f"  - Results saved to folder: {test_folder}")
     if moved_files > 0:
-        print(f"  - Среднее время на файл: {total_time / moved_files:.3f} сек")
+        print(f"  - Average time on file: {total_time / moved_files:.3f} s")
 
 
 def main():
     mp.freeze_support()
 
-    print("=== Автоматическое тестирование (поддержка JPG и PNG) ===")
-    print(f"Поддерживаемые форматы: {SUPPORTED_EXTENSIONS}")
-    print("Тесты 1-4: случайные наборы файлов (разного размера)")
-    print("Тесты 5-8: увеличивающееся количество файлов (3, 5, 7, все)")
+    print("=== Automatic testing (support JPG and PNG) ===")
+    print(f"Supported formats: {SUPPORTED_EXTENSIONS}")
+    print("Tests 1-4: random sets of files (different sizes)")
+    print("Tests 5-8: increadsing count of files (3, 5, 7, all)")
     print()
 
     all_images = find_all_inputs()
 
     if not all_images:
-        print("Файлы input1.jpg/input1.png - input10.jpg/input10.png не найдены.")
-        print("Убедитесь, что у вас есть файлы с именами input1.jpg, input2.png и т.д.")
+        print("Files input1.jpg/input1.png - input10.jpg/input10.png not found.")
+        print("Make sure you have files with names input1.jpg, input2.png and etc.")
         return
 
-    print(f"Найденные файлы (без расширения): {all_images}")
+    print(f"Files was finding (without extension): {all_images}")
     print(f"Всего файлов: {len(all_images)}")
 
-    print("\nФайлы с расширениями:")
+    print("\nFiles with extension:")
     for img in all_images:
         for ext in SUPPORTED_EXTENSIONS:
             if os.path.exists(f"{img}{ext}"):
@@ -186,7 +186,7 @@ def main():
         run_single_test(test_counter, workers, all_images)
         test_counter += 1
 
-    print("\n=== Все тесты завершены ===")
+    print("\n=== All tests complete ===")
 
 
 if __name__ == "__main__":

@@ -75,7 +75,7 @@ def run_parallel_inversion(image_names: list[str], num_workers: int):
             file_queue.put(path)
             valid_files.append(path)
         else:
-            print(f"[ОШИБКА] Файл {name} не найден")
+            print(f"[Error] File {name} not found")
 
     for _ in range(num_workers):
         file_queue.put(None)
@@ -87,35 +87,35 @@ def run_parallel_inversion(image_names: list[str], num_workers: int):
     for p in workers:
         p.join()
 
-    print("\n=== Результаты ===")
+    print("\n=== Results ===")
     for in_path, out_path, duration, err in results:
         if err:
             print(f"[FAIL] {in_path}: {err}")
         else:
-            print(f"[OK] {in_path} → {out_path} | {duration:.3f} сек")
+            print(f"[OK] {in_path} → {out_path} | {duration:.3f} s")
 
-    print("=== Готово ===")
+    print("=== Ready ===")
 
 def main():
     mp.freeze_support()
 
     try:
-        num_workers = int(input("Введите количество процессов: ").strip())
+        num_workers = int(input("Enter count of processes: ").strip())
         if num_workers <= 0:
             raise ValueError
     except ValueError:
-        print("Некорректное число процессов.")
+        print("Incorrect number of processes.")
         return
 
     files_input = input(
-        "Введите имена файлов через пробел (с расширением или без): "
+        "Enter names of files through spaces(with extension or not): "
     ).strip().split()
 
     if not files_input:
-        print("Файлы не указаны.")
+        print("Files not specified.")
         return
 
-    print("\n=== Начинаем параллельную обработку ===")
+    print("\n=== Starting parallel processing ===")
 
     overall_start = time.perf_counter()
 
@@ -123,7 +123,7 @@ def main():
 
     overall_end = time.perf_counter()
 
-    print(f"\nОбщее время выполнения: {overall_end - overall_start:.3f} сек")
+    print(f"\nTotal lead time: {overall_end - overall_start:.3f} s")
 
 
 if __name__ == "__main__":
